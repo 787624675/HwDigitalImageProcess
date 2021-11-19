@@ -8,6 +8,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import time
+from decimal import *
 
 
 def judge(img1, img2, ratio):
@@ -38,43 +39,48 @@ def get_gt(img, ratio):
 def resize2(src_img, ratio):
     srcH, srcW, _ = src_img.shape
     dst_shape = [int(srcH * ratio), int(srcW * ratio)]
-    dst_img = np.zeros((dst_shape[0], dst_shape[1], 3), np.uint8)
+    dst_img = np.zeros((dst_shape[0], dst_shape[1], 3), np.int32)
     dst_h, dst_w = dst_shape
     src_h = src_img.shape[0]
     src_w = src_img.shape[1]
-    scale_x = float(src_w / dst_w)
-    scale_y = float(src_h / dst_h)
+    scale_x = src_w / dst_w
+    scale_y = src_h / dst_h
+    mkernel = 128
+    step = 14
+    cbufx = [0,0]
+    cbufy = [0,0]
     for j in range(dst_h):
-        fy = (float)((j + 0.5) * scale_y - 0.5)
+        fy = ((j + 0.5) * scale_y - 0.5)
         sy = math.floor(fy)
         fy = fy - sy
-        sy = min(sy, src_h - 2)
-        sy = max(sy, 0)
-        cbufy = [0,0]
-        # cbufy[0] = np.uint8((1. - fy) * 2048)
-        # cbufy[1] = 2048 - cbufy[0]
-        cbufy[0] = 1. - fy
-        cbufy[1] = fy
+        if (sy < 0):
+            fy = 0.
+            sy = 0
+        if (sy >= src_h - 1):
+            fy = 1.
+            sy = src_h - 2
+        
+        cbufy[0] = math.floor((1. - fy) * mkernel)
+        cbufy[1] = mkernel - cbufy[0]
         for i in range(dst_w):
-            fx = (float)((i + 0.5) * scale_x - 0.5)
+            fx = ((i + 0.5) * scale_x - 0.5)
             sx = math.floor(fx)
             fx = fx - sx
             if (sx < 0):
-                fx = 0
+                fx = 0.
                 sx = 0
             if (sx >= src_w - 1):
-                fx = 0
+                fx = 1.
                 sx = src_w - 2
-            cbufx = [0,0]
-            # cbufx[0] = np.uint8((1. - fx) * 2048)
-            # cbufx[1] = 2048 - cbufx[0]
-            cbufx[0] = 1. - fx
-            cbufx[1] = fx
+            
+            cbufx[0] = math.floor((1. - fx) * mkernel)
+            cbufx[1] = mkernel - cbufx[0]
+          
             for k in range(0,3):
                 dst_img[j, i, k] = (src_img[sy,sx,k] * cbufx[0] * cbufy[0] + \
                     src_img[sy,sx+1,k] * cbufx[0] * cbufy[1] + \
                     src_img[sy+1,sx,k] * cbufx[1] * cbufy[0] + \
-                    src_img[sy+1,sx+1,k] * cbufx[1] * cbufy[1]) # >>22
+                    src_img[sy+1,sx+1,k] * cbufx[1] * cbufy[1])  >> step
     return dst_img
 
 
@@ -105,14 +111,14 @@ def resize(src_img, ratio):
                 src_x_float = 0.
                 src_x_int = 0
             if (src_x_int >= src_w - 1):
-                src_x_float = 0.
+                src_x_float = 1.
                 src_x_int = src_w - 2
 
             if (src_y_int < 0):
                 src_y_float = 0.
                 src_y_int = 0
             if (src_y_int >= src_h - 1):
-                src_y_float = 0.
+                src_y_float = 1.
                 src_y_int = src_h - 2
 
             dst_img[i, j, :] = (1. - src_y_float) * (1. - src_x_float) * src_img[src_y_int, src_x_int, :] + \
@@ -121,105 +127,8 @@ def resize(src_img, ratio):
                                src_y_float * src_x_float * src_img[src_y_int + 1, src_x_int + 1, :]
     return dst_img
 
-def resize4(src_img, ratio):
-    scrH, scrW, _ = src_img.shape
-    dst_shape = [int(scrH * ratio), int(scrW * ratio)]
-    dst_img = np.zeros((dst_shape[0], dst_shape[1], 3), np.uint8)
-    dst_h, dst_w = dst_shape
-    src_h = src_img.shape[0]
-    src_w = src_img.shape[1]
-    # i：纵坐标y，j：横坐标x
-    # 缩放因子，dw,dh
-    scale_w = np.single(src_w / dst_w)
-    scale_h = np.single(src_h / dst_h)
 
-    for i in range(dst_h):
-        for j in range(dst_w):
-            src_x = np.single((j + 0.5) * scale_w - 0.5)
-            src_y = np.single((i + 0.5) * scale_h - 0.5)
-			# 向下取整，代表靠近源点的左上角的那一点的行列号	
-            src_x_int = math.floor(src_x)
-            src_y_int = math.floor(src_y)
-            # 取出小数部分，用于构造权值
-            src_x_float = (src_x - src_x_int)
-            src_y_float = (src_y - src_y_int)
 
-            if (src_x_int < 0):
-                src_x_float = 0.
-                src_x_int = 0
-            if (src_x_int >= src_w - 1):
-                src_x_float = 0.
-                src_x_int = src_w - 2
-
-            if (src_y_int < 0):
-                src_y_float = 0.
-                src_y_int = 0
-            if (src_y_int >= src_h - 1):
-                src_y_float = 0.
-                src_y_int = src_h - 2
-
-            dst_img[i, j, :] = (1. - src_y_float) * (1. - src_x_float) * src_img[src_y_int, src_x_int, :] + \
-                               (1. - src_y_float) * src_x_float * src_img[src_y_int, src_x_int + 1, :] + \
-                               src_y_float * (1. - src_x_float) * src_img[src_y_int + 1, src_x_int, :] + \
-                               src_y_float * src_x_float * src_img[src_y_int + 1, src_x_int + 1, :]
-    return dst_img
-
-def resize3(src_img, ratio):
-    scrH, scrW, _ = src_img.shape
-    if(ratio < 1):
-        dst_shape = [int(scrH * ratio), int(scrW * ratio)]
-    else:
-        dst_shape = [int(scrH * ratio), int(scrW * ratio)]
-    dst_img = np.zeros((dst_shape[0], dst_shape[1], 3), np.uint8)
-    dst_h, dst_w = dst_shape
-    src_h = src_img.shape[0]
-    src_w = src_img.shape[1]
-    # i：纵坐标y，j：横坐标x
-    # 缩放因子，dw,dh
-    scale_w = float(src_w / dst_w)
-    scale_h = float(src_h / dst_h)
-
-    for i in range(dst_h):
-        for j in range(dst_w):
-            fx = float((j + 0.5) * scale_w - 0.5)
-            fy = float((i + 0.5) * scale_h - 0.5)
-			# 向下取整，代表靠近源点的左上角的那一点的行列号	
-            sx = math.floor(fx)
-            sy = math.floor(fy)
-            # 取出小数部分，用于构造权值
-            fx = fx - sx
-            fy = fy - sy
-
-            if (sx < 0):
-                fx = 0.
-                sx = 0
-            if (sx >= src_w - 1):
-                fx = 0.
-                sx = src_w - 2
-
-            if (sy < 0):
-                fy = 0.
-                sy = 0
-            if (sy >= src_h - 1):
-                fy = 0.
-                sy = src_h - 2
-
-            # if src_x_int + 1 == src_w or src_y_int + 1 == src_h:
-            #     dst_img[i, j, :] = src_img[src_y_int, src_x_int, :]
-            #     continue
-            ksize = 2048
-            cbufx = [0,0]
-            cbufx[0] = np.uint32((1. - fx) * ksize)
-            cbufx[1] = ksize - cbufx[0]
-            cbufy = [0,0]
-            cbufy[0] = np.uint32((1. - fx) * ksize)
-            cbufy[1] = ksize - cbufy[0]
-            for k in range(0,3):
-                dst_img[i, j, k] = (src_img[sy,sx,k] * cbufx[0] * cbufy[0] + \
-                    src_img[sy,sx+1,k] * cbufx[0] * cbufy[1] + \
-                    src_img[sy+1,sx,k] * cbufx[1] * cbufy[0] + \
-                    src_img[sy+1,sx+1,k] * cbufx[1] * cbufy[1]) >> 22
-    return dst_img
 
 
 def show_images(img1, img2):
@@ -241,7 +150,7 @@ if __name__ == '__main__':
     start_time = time.time()
     for ratio in ratios:
         gt = get_gt(img, ratio)
-        resized_img = resize4(img, ratio)
+        resized_img = resize2(img, ratio)
         show_images(gt, resized_img)  # added
         judge(gt, resized_img, ratio)
     end_time = time.time()
